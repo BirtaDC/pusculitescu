@@ -312,7 +312,7 @@ function calc(s,today,extra){
   const fundsDone=sum(s.funds,f=>f.doneAmt||0);
   const fundsDue=sum(s.funds,fundDue);
   const byCat={};
-  const cyc=s.tx.filter(t=>t.date>=s.settings.cycleStart&&t.type!=='transfer');
+  const cyc=s.tx.filter(t=>t.date>=s.settings.cycleStart&&t.type!=='transfer'&&t.type!=='cash');
   const xfer={};mem.forEach(m=>{xfer[m.id]=0;});
   s.tx.forEach(t=>{if(t.type==='transfer'&&t.date>=s.settings.cycleStart){if(xfer[t.to]!==undefined)xfer[t.to]+=t.amount;if(xfer[t.from]!==undefined)xfer[t.from]-=t.amount;}});
   cyc.forEach(t=>{byCat[t.cat]=(byCat[t.cat]||0)+t.amount;});
@@ -327,13 +327,21 @@ function calc(s,today,extra){
   const keyOf=w=>holdBy[w]!==undefined?w:mem[0].id;
   act.forEach(f=>{if(f.paid==null)holdBy[keyOf(f.who)]+=f.est;});
   s.rates.forEach(r=>{holdBy[keyOf(r.who)]+=rateDue(r);});
-  const freeBy={};mem.forEach(m=>{freeBy[m.id]=xfer[m.id]||0;});
+  const freeBy={};mem.forEach(m=>{freeBy[m.id]=0;});
+  s.tx.forEach(t=>{if(t.type==='transfer'&&t.date>=s.settings.cycleStart){if(freeBy[t.to]!==undefined)freeBy[t.to]+=t.amount;if(freeBy[t.from]!==undefined)freeBy[t.from]-=t.amount;}});
   const kk=w=>freeBy[w]!==undefined?w:mem[0].id;
   s.incomes.forEach(i=>{if(i.received)freeBy[kk(i.who)]+=i.amount;});
   act.forEach(f=>{if(f.paid!=null)freeBy[kk(f.who)]-=f.paid;});
   s.rates.forEach(r=>{freeBy[kk(r.who)]-=(r.paidNow||0);});
   cyc.forEach(t=>{freeBy[kk(t.who)]-=t.amount;});
   mem.forEach(m=>{freeBy[m.id]-=holdBy[m.id]+(essLeft+save)/mem.length;});
+  s.tx.forEach(t=>{if(t.type==='cash'&&t.date>=s.settings.cycleStart&&t.from!==t.to){if(freeBy[t.to]!==undefined)freeBy[t.to]+=t.amount;if(freeBy[t.from]!==undefined)freeBy[t.from]-=t.amount;}});
+  const cardBy={},cashBy={};mem.forEach(m=>{cardBy[m.id]=xfer[m.id]||0;cashBy[m.id]=0;});
+  s.tx.forEach(t=>{if(t.type==='cash'&&t.date>=s.settings.cycleStart){if(cardBy[t.from]!==undefined)cardBy[t.from]-=t.amount;if(cashBy[t.to]!==undefined)cashBy[t.to]+=t.amount;}});
+  s.incomes.forEach(i=>{if(i.received&&i.kind!=='draw')cardBy[kk(i.who)]+=i.amount;});
+  act.forEach(f=>{if(f.paid!=null)cardBy[kk(f.who)]-=f.paid;});
+  s.rates.forEach(r=>{cardBy[kk(r.who)]-=(r.paidNow||0);});
+  cyc.forEach(t=>{if(t.cash)cashBy[kk(t.who)]-=t.amount;else cardBy[kk(t.who)]-=t.amount;});
   const next=nextPayday(s.settings.cycleStart,s.settings.payday);
   const daysLeft=dayDiff(today,next);
   const lateDays=daysLeft<0?-daysLeft:0;
@@ -352,7 +360,7 @@ function calc(s,today,extra){
     }
     return {id:i.id,name:i.name,amount:i.amount,who:i.who,exp:exp,late:late};
   });
-  return {inc,incPending,fixedPaid,fixedDue,ratePaid,rateDue:rateDueSum,fundsDone,fundsDue,save,remain,holdBy,xfer,freeBy,
+  return {inc,incPending,fixedPaid,fixedDue,ratePaid,rateDue:rateDueSum,fundsDone,fundsDue,save,remain,holdBy,xfer,freeBy,cardBy,cashBy,
     byCat,varSpent,essLeft,spent,hold,free,next,daysLeft,late:lateDays,state,denom,perDay,pending,
     end:addDays(next,-1),start:st};
 }
@@ -497,7 +505,7 @@ function vHome(c){
   const nRate=S.rates.filter(r=>rateDue(r)>0).length;
   const sv=c.fundsDue>0?'<div class="sub" style="color:var(--ink);margin-top:6px">În plus: '+fmt(c.fundsDue)+' lei de pus deoparte în pușculițe</div>':'';
   let split='';
-  if(multi()){split='<div style="border-top:1px solid rgba(127,127,127,.3);margin-top:8px">'+M().map(m=>'<div class="lg"><span>Liber '+esc(m.name)+'</span><b>'+fmt(c.freeBy[m.id]||0)+'</b></div><div class="lg"><span>Card '+esc(m.name)+((c.xfer[m.id]||0)!==0?' <small>('+((c.xfer[m.id]||0)>0?'+':'−')+fmt(Math.abs(c.xfer[m.id]))+' transfer)</small>':'')+'</span><b>'+fmt(c.holdBy[m.id]||0)+'</b></div>').join('')+''+'</div>';}
+  if(multi()){split='<div style="border-top:1px solid rgba(127,127,127,.3);margin-top:8px">'+M().map(m=>'<div class="lg"><span>Liber '+esc(m.name)+'</span><b>'+fmt(c.freeBy[m.id]||0)+'</b></div><div class="lg"><span>Pe card '+esc(m.name)+' <small>(de oprit '+fmt(c.holdBy[m.id]||0)+')</small></span><b>'+fmt(c.cardBy[m.id]||0)+'</b></div>'+((c.cashBy[m.id]||0)!==0?'<div class="lg"><span>Numerar '+esc(m.name)+'</span><b>'+fmt(c.cashBy[m.id])+'</b></div>':'')).join('')+((c.essLeft+c.save)>0.005?'<div class="note" style="margin-top:6px">În „Liber” fiecare a scăzut și jumătate din rezervele comune ('+fmt(c.essLeft+c.save)+' lei: buget esențial rămas + pușculițe), deci diferența față de card e normală.</div>':'')+'</div>';}
   h+='<section class="card holdcard"><div class="eyebrow" style="color:var(--hold)">De oprit pe card</div><div class="n">'+fmt(c.hold)+' lei</div><div class="sub" style="color:var(--ink)">'+nFixed+' facturi și abonamente ('+fmt(c.fixedDue)+') · '+nRate+' rate ('+fmt(c.rateDue)+')</div>'+sv+split+'</section>';
 
   const fc=forecast(S,c.next);ui.fc=fc;
@@ -620,11 +628,13 @@ function vChelt(c){
   h+='<div class="note" style="padding:0 2px">Categoriile esențiale se rezervă din „Liber de cheltuit”. Restul se plătesc din ce rămâne liber.</div>';
   const list=S.tx.filter(t=>t.date>=S.settings.cycleStart&&(ui.who==='all'||t.who===ui.who||t.to===ui.who)).slice().reverse();
   if(multi())h+='<button class="link" data-action="addXfer">↔ Transfer între conturi</button>';
+  h+='<button class="link" data-action="addCash">💵 Retragere numerar</button>';
   h+='<div class="sec"><h3>Cheltuieli din ciclu</h3>'+(multi()?'<span><label class="lab" for="whof" style="margin-right:6px">Cine</label><select id="whof"><option value="all">Toți</option>'+M().map(m=>'<option value="'+m.id+'"'+(ui.who===m.id?' selected':'')+'>'+esc(m.name)+'</option>').join('')+'</select></span>':'')+'</div><section class="card">';
   if(!list.length)h+='<div class="empty">Nicio cheltuială încă. Apasă „Cheltuială”.</div>';
   list.forEach(t=>{
     const d=parseISO(t.date);
-    if(t.type==='transfer'){h+='<div class="row"><button class="rowmain" data-action="editTx" data-id="'+t.id+'"><span class="t">Transfer '+esc(memberName(t.from))+' → '+esc(memberName(t.to))+'</span><span class="s">'+esc(t.note||'între conturi')+' · '+shortDate(d)+'</span></button><span class="amt">↔ '+fmt(t.amount)+'</span></div>';return;}
+    if(t.type==='cash'){h+='<div class="row"><button class="rowmain" data-action="editTx" data-id="'+t.id+'"><span class="t">Retragere numerar</span><span class="s">'+esc(memberName(t.from))+(t.to!==t.from?' → '+esc(memberName(t.to)):'')+' · '+shortDate(d)+(t.note?' · '+esc(t.note):'')+'</span></button><span class="amt">💵 '+fmt(t.amount)+'</span></div>';return;}
+    if(t.type==='transfer'){h+='<div class="row"><button class="rowmain" data-action="editTx" data-id="'+t.id+'"><span class="t">Transfer '+esc(memberName(t.from))+' → '+esc(memberName(t.to))+'</span><span class="s">'+esc(t.note||'între conturi')+' · '+shortDate(d)+'</span></button>'+'<span class="amt">↔ '+fmt(t.amount)+'</span>'+'</div>';return;}
     h+='<div class="row"><button class="rowmain" data-action="editTx" data-id="'+t.id+'"><span class="t">'+esc(t.note||t.cat)+'</span><span class="s">'+esc(t.cat)+' · '+shortDate(d)+(multi()?' · '+esc(memberName(t.who)):'')+'</span></button><span class="amt">−'+fmt(t.amount)+'</span></div>';
   });
   h+='</section>';
@@ -731,12 +741,17 @@ function sheetBudget(id){
 function sheetTx(id){
   const t=id==='new'?{amount:'',cat:S.budgets[0]?S.budgets[0].name:'Altele',note:'',who:meId()}:S.tx.find(x=>x.id===id);
   const cats=S.budgets.map(b=>b.name);if(cats.indexOf(t.cat)<0)cats.push(t.cat);
-  openSheet('<h2>'+(id==='new'?'Cheltuială nouă':'Editează cheltuiala')+'</h2><div class="fld"><label for="f_amt">Suma (lei)</label><input id="f_amt" class="amtin" inputmode="decimal" placeholder="0" value="'+esc(t.amount)+'" data-focus></div><div class="fld"><span class="lab">Categorie</span><div class="chips">'+cats.map(c=>'<label class="chip"><input type="radio" name="cat" value="'+esc(c)+'"'+(c===t.cat?' checked':'')+'><span>'+esc(c)+'</span></label>').join('')+'</div></div>'+fld('f_note','Notă (opțional)',t.note||'','placeholder="ex. Kaufland"')+whoSel(t.who)+btns('saveTx',id,'delTx'));
+  openSheet('<h2>'+(id==='new'?'Cheltuială nouă':'Editează cheltuiala')+'</h2><div class="fld"><label for="f_amt">Suma (lei)</label><input id="f_amt" class="amtin" inputmode="decimal" placeholder="0" value="'+esc(t.amount)+'" data-focus></div><div class="fld"><span class="lab">Categorie</span><div class="chips">'+cats.map(c=>'<label class="chip"><input type="radio" name="cat" value="'+esc(c)+'"'+(c===t.cat?' checked':'')+'><span>'+esc(c)+'</span></label>').join('')+'</div></div>'+fld('f_note','Notă (opțional)',t.note||'','placeholder="ex. Kaufland"')+whoSel(t.who)+'<label class="check"><input type="checkbox" id="f_cash"'+(t.cash?' checked':'')+'>Plătit cu numerar (nu scade din card)</label>'+btns('saveTx',id,'delTx'));
 }
 function sheetXfer(id){
   const t=id==='new'?{amount:'',note:'',from:meId(),to:(M().find(m=>m.id!==meId())||M()[0]).id}:S.tx.find(x=>x.id===id);
   const opt=sel=>M().map(m=>'<option value="'+m.id+'"'+(m.id===sel?' selected':'')+'>'+esc(m.name)+'</option>').join('');
-  openSheet('<h2>'+(id==='new'?'Transfer între conturi':'Editează transferul')+'</h2><div class="note">Muți bani din partea cuiva în partea altcuiva. Totalul familiei rămâne la fel, doar „Liber” se mută de la unul la altul. Scade din total abia când cel care a primit trece cheltuiala.</div><div class="two"><div class="fld"><label for="f_from">De la</label><select id="f_from">'+opt(t.from)+'</select></div><div class="fld"><label for="f_to">Către</label><select id="f_to">'+opt(t.to)+'</select></div></div><div class="fld"><label for="f_amt">Suma (lei)</label><input id="f_amt" class="amtin" inputmode="decimal" placeholder="0" value="'+esc(t.amount)+'" data-focus></div>'+fld('f_note','Notă (opțional)',t.note||'','placeholder="ex. bani pentru rate"')+btns('saveXfer',id,'delTx'));
+  openSheet('<h2>'+(id==='new'?'Transfer între conturi':'Editează transferul')+'</h2><div class="note">Banii se mută pe loc de la unul la altul, la „Liber” și pe card. Totalul familiei nu se schimbă; scade doar când se trece o cheltuială.</div><div class="two"><div class="fld"><label for="f_from">De la</label><select id="f_from">'+opt(t.from)+'</select></div><div class="fld"><label for="f_to">Către</label><select id="f_to">'+opt(t.to)+'</select></div></div><div class="fld"><label for="f_amt">Suma (lei)</label><input id="f_amt" class="amtin" inputmode="decimal" placeholder="0" value="'+esc(t.amount)+'" data-focus></div>'+fld('f_note','Notă (opțional)',t.note||'','placeholder="ex. bani pentru rate"')+''+btns('saveXfer',id,'delTx'));
+}
+function sheetCash(id){
+  const t=id==='new'?{amount:'',note:'',from:meId(),to:meId()}:S.tx.find(x=>x.id===id);
+  const opt=sel=>M().map(m=>'<option value="'+m.id+'"'+(m.id===sel?' selected':'')+'>'+esc(m.name)+'</option>').join('');
+  openSheet('<h2>'+(id==='new'?'Retragere numerar':'Editează retragerea')+'</h2><div class="note">Banii ies de pe card și devin numerar. Nu e cheltuială: totalul rămâne la fel. Dacă numerarul e pentru partener, „Liber” se mută la el.</div><div class="two"><div class="fld"><label for="f_from">Din cardul lui</label><select id="f_from">'+opt(t.from)+'</select></div><div class="fld"><label for="f_to">Numerarul ajunge la</label><select id="f_to">'+opt(t.to)+'</select></div></div><div class="fld"><label for="f_amt">Suma (lei)</label><input id="f_amt" class="amtin" inputmode="decimal" placeholder="0" value="'+esc(t.amount)+'" data-focus></div>'+fld('f_note','Notă (opțional)',t.note||'','placeholder="ex. bancomat"')+btns('saveCash',id,'delTx'));
 }
 function sheetMember(id){
   const m=M().find(x=>x.id===id);
@@ -754,14 +769,17 @@ function act(a,d){
     case 'tab':ui.tab=d.tab;render();$('#main').scrollTop=0;break;
     case 'close':closeSheet();break;
     case 'addTx':sheetTx('new');break;
-    case 'editTx':{const t=S.tx.find(x=>x.id===d.id);if(t&&t.type==='transfer')sheetXfer(d.id);else sheetTx(d.id);break;}
+    case 'editTx':{const t=S.tx.find(x=>x.id===d.id);if(t&&t.type==='cash')sheetCash(d.id);else if(t&&t.type==='transfer')sheetXfer(d.id);else sheetTx(d.id);break;}
+    case 'xferDone':{const t=find(S.tx);t.done=true;commit();break;}
+    case 'addCash':sheetCash('new');break;
+    case 'saveCash':{const a=num(val('f_amt'));if(a<=0)return;const fr=val('f_from'),to=val('f_to')||fr;const o={amount:a,from:fr,to:to,who:fr,note:val('f_note').trim(),cat:'Numerar',type:'cash'};if(d.id==='new')S.tx.push(Object.assign({id:uid('t'),date:iso(TODAY())},o));else Object.assign(find(S.tx),o);closeSheet();commit();break;}
     case 'addXfer':sheetXfer('new');break;
     case 'saveXfer':{const a=num(val('f_amt'));const fr=val('f_from'),to=val('f_to');if(a<=0||fr===to)return;const o={amount:a,from:fr,to:to,who:fr,note:val('f_note').trim(),cat:'Transfer',type:'transfer'};if(d.id==='new')S.tx.push(Object.assign({id:uid('t'),date:iso(TODAY())},o));else Object.assign(find(S.tx),o);closeSheet();commit();break;}
     case 'saveTx':{
       const amt=num(val('f_amt'));if(amt<=0){return;}
       const catEl=document.querySelector('input[name=cat]:checked');const cat=catEl?catEl.value:'Altele';
-      if(d.id==='new')S.tx.push({id:uid('t'),date:iso(TODAY()),cat:cat,amount:amt,note:val('f_note').trim(),who:whoVal()});
-      else{const t=find(S.tx);t.amount=amt;t.cat=cat;t.note=val('f_note').trim();t.who=whoVal();}
+      if(d.id==='new')S.tx.push({id:uid('t'),date:iso(TODAY()),cat:cat,amount:amt,note:val('f_note').trim(),who:whoVal(),cash:chk('f_cash')});
+      else{const t=find(S.tx);t.amount=amt;t.cat=cat;t.note=val('f_note').trim();t.who=whoVal();t.cash=chk('f_cash');}
       closeSheet();commit();break;}
     case 'delTx':S.tx=S.tx.filter(x=>x.id!==d.id);closeSheet();commit();break;
 
