@@ -296,7 +296,7 @@ function blankState(o,today){
     settings:{payday:day,grace:5,cycleStart:iso(c)},
     incomes:incomes,fixed:[],rates:[],
     budgets:[{id:'b1',name:'Alimente',limit:0,essential:true},{id:'b2',name:'Transport',limit:0,essential:true},{id:'b3',name:'Altele',limit:0,essential:false}],
-    tx:[],funds:funds};
+    tx:[],funds:funds,hist:[],quick:[]};
 }
 
 function calc(s,today,extra){
@@ -339,7 +339,7 @@ function calc(s,today,extra){
   const cardBy={},cashBy={};mem.forEach(m=>{cardBy[m.id]=xfer[m.id]||0;cashBy[m.id]=0;});
   s.tx.forEach(t=>{if(t.type==='cash'&&t.date>=s.settings.cycleStart){if(cardBy[t.from]!==undefined)cardBy[t.from]-=t.amount;if(cashBy[t.to]!==undefined)cashBy[t.to]+=t.amount;}});
   s.incomes.forEach(i=>{if(i.received&&i.kind!=='draw')cardBy[kk(i.who)]+=i.amount;});
-  act.forEach(f=>{if(f.paid!=null)cardBy[kk(f.who)]-=f.paid;});
+  act.forEach(f=>{if(f.paid!=null){if(f.cash)cashBy[kk(f.who)]-=f.paid;else cardBy[kk(f.who)]-=f.paid;}});
   s.rates.forEach(r=>{cardBy[kk(r.who)]-=(r.paidNow||0);});
   cyc.forEach(t=>{if(t.cash)cashBy[kk(t.who)]-=t.amount;else cardBy[kk(t.who)]-=t.amount;});
   const next=nextPayday(s.settings.cycleStart,s.settings.payday);
@@ -395,6 +395,11 @@ function startNewCycle(s,today,receivedIds){
   const old=calc(s,today);const T=Math.max(0,old.remain-old.fundsDone);
   const wts=s.household.members.map(m=>Math.max(0,(old.cardBy[m.id]||0)+(old.cashBy[m.id]||0)));const ws=wts.reduce((a,b)=>a+b,0);
   const carries=[];if(T>=0.01)s.household.members.forEach((m,k)=>{const a=ws>0?T*wts[k]/ws:(k===0?T:0);if(a>=0.01)carries.push({id:'c'+m.id,name:'Rămas din luna trecută',amount:Math.round(a*100)/100,day:null,received:true,who:m.id,mayDelay:false,kind:'once',carry:true});});
+  if(!s.hist)s.hist=[];
+  {const hid='h'+s.settings.cycleStart;const spent=old.fixedPaid+old.ratePaid+old.varSpent;
+   const row={id:hid,from:s.settings.cycleStart,to:iso(today),inc:Math.round(old.inc*100)/100,spent:Math.round(spent*100)/100,saved:Math.round(old.fundsDone*100)/100,carry:Math.round(T*100)/100,cats:{}};
+   Object.keys(old.byCat).forEach(k=>{row.cats[k]=Math.round(old.byCat[k]*100)/100;});
+   if(spent>0||old.inc>0){const k=s.hist.findIndex(x=>x.id===hid);if(k>=0)s.hist[k]=row;else s.hist.push(row);s.hist=s.hist.slice(-36);}}
   s.settings.cycleStart=iso(today);
   s.incomes=s.incomes.filter(i=>i.kind!=='once');
   s.incomes.forEach(i=>{i.received=false;i.took=0;});
@@ -431,7 +436,7 @@ function load(){
   try{const raw=localStorage.getItem(KEY);if(raw){const o=JSON.parse(raw);if(o&&o.v===2){migrate(o);return o;}}}catch(e){}
   return seed();
 }
-function migrate(o){(o.funds||[]).forEach(f=>{if(f.doneAmt===undefined){f.doneAmt=f.done?(f.monthly||0):null;}delete f.done;if(f.where===undefined)f.where='';});return o;}
+function migrate(o){if(!o.hist)o.hist=[];if(!o.quick)o.quick=[];(o.funds||[]).forEach(f=>{if(f.doneAmt===undefined){f.doneAmt=f.done?(f.monthly||0):null;}delete f.done;if(f.where===undefined)f.where='';});return o;}
 function save(){try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){}}
 function commit(){save();render();schedule();}
 
@@ -509,7 +514,7 @@ function vHome(c){
   const nRate=S.rates.filter(r=>rateDue(r)>0).length;
   const sv=c.fundsDue>0?'<div class="sub" style="color:var(--ink);margin-top:6px">În plus: '+fmt(c.fundsDue)+' lei de pus deoparte în pușculițe</div>':'';
   let split='';
-  if(multi()){split='<div style="border-top:1px solid rgba(127,127,127,.3);margin-top:8px">'+M().map(m=>'<div class="lg"><span>Liber '+esc(m.name)+'</span><b>'+fmt(c.freeBy[m.id]||0)+'</b></div><div class="lg"><span>Pe card '+esc(m.name)+' <small>(de oprit '+fmt(c.holdBy[m.id]||0)+')</small></span><b>'+fmt(c.cardBy[m.id]||0)+'</b></div>'+((c.cashBy[m.id]||0)!==0?'<div class="lg"><span>Numerar '+esc(m.name)+'</span><b>'+fmt(c.cashBy[m.id])+'</b></div>':'')).join('')+((c.essLeft+c.save)>0.005?'<div class="note" style="margin-top:6px">În „Liber” fiecare a scăzut și jumătate din rezervele comune ('+fmt(c.essLeft+c.save)+' lei: buget esențial rămas + pușculițe), deci diferența față de card e normală.</div>':'')+'</div>';}
+  if(multi()){split='<div style="border-top:1px solid rgba(127,127,127,.3);margin-top:8px">'+M().map(m=>'<div class="lg"><span>Pe card '+esc(m.name)+' <small>(de oprit '+fmt(c.holdBy[m.id]||0)+')</small></span><b>'+fmt(c.cardBy[m.id]||0)+'</b></div>'+((c.cashBy[m.id]||0)!==0?'<div class="lg"><span>Numerar '+esc(m.name)+'</span><b>'+fmt(c.cashBy[m.id])+'</b></div>':'')).join('')+'</div>';}
   h+='<section class="card holdcard"><div class="eyebrow" style="color:var(--hold)">De oprit pe card</div><div class="n">'+fmt(c.hold)+' lei</div><div class="sub" style="color:var(--ink)">'+nFixed+' facturi și abonamente ('+fmt(c.fixedDue)+') · '+nRate+' rate ('+fmt(c.rateDue)+')</div>'+sv+split+'</section>';
 
   const fc=forecast(S,c.next);ui.fc=fc;
@@ -557,7 +562,7 @@ function vPlati(c){
     h+='<div class="lab" style="margin-top:6px">'+esc(g[0])+'</div>';
     g[1].forEach(f=>{
       const done=f.paid!=null;
-      const meta=[done?(Math.abs(f.paid-f.est)>0.005?'plătit, estimat '+fmt(f.est)+' ('+(f.paid<f.est?'−':'+')+fmt(Math.abs(f.paid-f.est))+')':'plătit'):'estimat'];
+      const meta=[done?(Math.abs(f.paid-f.est)>0.005?'plătit, estimat '+fmt(f.est)+' ('+(f.paid<f.est?'−':'+')+fmt(Math.abs(f.paid-f.est))+')':'plătit')+(f.cash?' în numerar':''):'estimat'];
       if(multi())meta.push(esc(memberName(f.who)));
       if(f.auto)meta.push('automat');
       if(f.until)meta.push('până în '+untilLabel(f.until));
@@ -608,6 +613,8 @@ function vPusc(c){
     if(f.goal>0){
       const rem=f.goal-tot;
       if(rem<=0.005)proj='Ținta e atinsă.';
+      else if(f.goalDate){const dl=dayDiff(TODAY(),parseISO(f.goalDate));const mo=Math.max(1,Math.ceil(dl/30.4));const need=Math.ceil(rem/mo);
+        proj=dl<0?'Data țintă a trecut. Mai ai de strâns '+fmt(rem)+' lei.':'Până pe '+shortDate(parseISO(f.goalDate))+' '+parseISO(f.goalDate).getFullYear()+' (≈ '+mo+' luni) trebuie să pui ≈ '+fmt(need)+' lei pe lună'+(f.monthly>=need?'. Ești pe drumul bun.':' (acum pui '+fmt(f.monthly||0)+').')+(f.monthly<need&&dl>=0?' <button class="link" data-action="useNeed" data-id="'+f.id+'" data-v="'+need+'">Pune '+fmt(need)+' pe lună</button>':'');}
       else if(f.monthly>0)proj='La '+fmt(f.monthly)+' lei pe lună ajungi la țintă în ≈ '+Math.ceil(rem/f.monthly)+' luni.';
       else proj='Setează o sumă lunară ca să vezi în cât timp ajungi la țintă.';
     }
@@ -631,6 +638,7 @@ function vChelt(c){
   h+='<button class="link" data-action="editBudget" data-id="new">+ Adaugă categorie</button></section>';
   h+='<div class="note" style="padding:0 2px">Categoriile esențiale se rezervă din „Liber de cheltuit”. Restul se plătesc din ce rămâne liber.</div>';
   const list=S.tx.filter(t=>t.date>=S.settings.cycleStart&&(ui.who==='all'||t.who===ui.who||t.to===ui.who)).slice().reverse();
+  h+='<div class="sec"><h3>Plăți rapide</h3><span><button class="link" data-action="quickList" style="padding:0">Gestionează</button></span></div><section class="card"><div class="chips">'+(S.quick.length?S.quick.map(q=>'<button class="pill" data-action="quickAdd" data-id="'+q.id+'">'+esc(q.name)+' · '+fmt(q.amount)+'</button>').join(''):'<span class="note">Adaugă plățile pe care le faci des (pâine, parcare, cafea) și le treci dintr-o atingere.</span>')+'</div></section>';
   if(multi())h+='<button class="link" data-action="addXfer">↔ Transfer între conturi</button>';
   h+='<button class="link" data-action="addCash">💵 Retragere numerar</button>';
   h+='<div class="sec"><h3>Cheltuieli din ciclu</h3>'+(multi()?'<span><label class="lab" for="whof" style="margin-right:6px">Cine</label><select id="whof"><option value="all">Toți</option>'+M().map(m=>'<option value="'+m.id+'"'+(ui.who===m.id?' selected':'')+'>'+esc(m.name)+'</option>').join('')+'</select></span>':'')+'</div><section class="card">';
@@ -639,7 +647,7 @@ function vChelt(c){
     const d=parseISO(t.date);
     if(t.type==='cash'){h+='<div class="row"><button class="rowmain" data-action="editTx" data-id="'+t.id+'"><span class="t">Retragere numerar</span><span class="s">'+esc(memberName(t.from))+(t.to!==t.from?' → '+esc(memberName(t.to)):'')+' · '+shortDate(d)+(t.note?' · '+esc(t.note):'')+'</span></button><span class="amt">💵 '+fmt(t.amount)+'</span></div>';return;}
     if(t.type==='transfer'){h+='<div class="row"><button class="rowmain" data-action="editTx" data-id="'+t.id+'"><span class="t">Transfer '+esc(memberName(t.from))+' → '+esc(memberName(t.to))+'</span><span class="s">'+esc(t.note||'între conturi')+' · '+shortDate(d)+'</span></button>'+'<span class="amt">↔ '+fmt(t.amount)+'</span>'+'</div>';return;}
-    h+='<div class="row"><button class="rowmain" data-action="editTx" data-id="'+t.id+'"><span class="t">'+esc(t.note||t.cat)+'</span><span class="s">'+esc(t.cat)+' · '+shortDate(d)+(multi()?' · '+esc(memberName(t.who)):'')+'</span></button><span class="amt">−'+fmt(t.amount)+'</span></div>';
+    h+='<div class="row"><button class="rowmain" data-action="editTx" data-id="'+t.id+'"><span class="t">'+(t.img?'📷 ':'')+esc(t.note||t.cat)+'</span><span class="s">'+esc(t.cat)+' · '+shortDate(d)+(multi()?' · '+esc(memberName(t.who)):'')+'</span></button><span class="amt">−'+fmt(t.amount)+'</span></div>';
   });
   const rec=[];
   S.fixed.filter(f=>f.active!==false&&f.paid!=null&&(ui.who==='all'||f.who===ui.who)).forEach(f=>rec.push({id:f.id,a:'editFixed',n:f.name,s:'plată recurentă · '+f.cat+(multi()?' · '+memberName(f.who):''),v:f.paid}));
@@ -663,8 +671,8 @@ function vMai(c){
   h+='<button class="link" data-action="editIncome" data-id="new">+ Adaugă venit</button><button class="link" data-action="addStart">+ Sold de pornire (banii de pe card dinainte de salariu)</button><button class="link" data-action="addOnce">+ Bani primiți ocazional (bonus, cadou)</button></section>';
   h+='<div class="sec"><h3>Ciclul de salariu</h3></div><section class="card"><div class="two"><div class="fld"><label for="s_pay">Ziua principală</label><input id="s_pay" inputmode="numeric" value="'+S.settings.payday+'"></div><div class="fld"><label for="s_grace">Zile de grație</label><input id="s_grace" inputmode="numeric" value="'+S.settings.grace+'"></div></div><div class="note" style="margin:8px 0 12px">Ziua principală e ziua în care se închide ciclul, de obicei ziua salariului. Zilele de grație sunt câte zile ești dispus să aștepți dacă un salariu întârzie.</div><div class="actions"><button class="btn" data-action="saveSettings">Salvează</button><button class="btn ghost" data-action="newCycle">Începe ciclul nou</button></div></section>';
   h+='<div class="sec"><h3>Gospodărie</h3><span>'+M().length+' '+(M().length===1?'membru':'membri')+'</span></div><section class="card">'+M().map(m=>'<div class="row"><button class="rowmain" data-action="editMember" data-id="'+m.id+'"><span class="t">'+esc(m.name)+'</span><span class="s">'+fmt(sum(S.incomes.filter(i=>i.who===m.id),i=>i.amount))+' lei venit lunar'+(sync.hid?(m.uid?' · cont conectat':' · fără cont conectat'):'')+'</span></button></div>').join('')+'<div class="fld" style="margin-top:8px"><label for="s_mem">Adaugă un membru (partener sau alt adult cu venit)</label><div class="actions"><input id="s_mem" class="inl" placeholder="Nume" style="flex:2"><button class="btn" data-action="addMember">Adaugă</button></div></div><div class="note" style="margin-top:8px">Calculul se face pe totalul gospodăriei. În prototip, membrii se văd doar pe acest telefon. Invitarea unui partener cu cont propriu vine în versiunea cu server.</div></section>';
-  h+='<div class="sec"><h3>Despre</h3></div><section class="card"><div class="row"><span class="t">Pușculițescu</span><span class="amt">versiunea 3 · nov 2026</span></div><button class="link" data-action="privacy">Confidențialitate</button></section>';
-  h+='<div class="sec"><h3>Datele tale</h3></div><section class="card"><div class="actions"><button class="btn ghost" data-action="exportData">Exportă</button><button class="btn ghost" data-action="importSheet">Importă</button></div>'+(sync.hid?'<div class="note" style="margin-top:10px">Datele sunt sincronizate în cloud. Dacă imporți, se înlocuiesc datele gospodăriei pentru amândoi.</div></section>':'<div class="actions" style="margin-top:10px"><button class="btn ghost" data-action="setupAsk">Gospodărie nouă, de la zero</button></div><div class="actions" style="margin-top:10px"><button class="btn danger" data-action="resetAsk">Revino la datele inițiale</button></div><div class="note" style="margin-top:10px">Datele rămân în browserul acestui telefon. Exportă-le periodic ca să nu le pierzi.</div></section>');
+  h+='<div class="sec"><h3>Despre</h3></div><section class="card"><div class="row"><span class="t">Pușculițescu</span><span class="amt">versiunea 4 · nov 2026</span></div><button class="link" data-action="privacy">Confidențialitate</button></section>';
+  h+='<div class="sec"><h3>Datele tale</h3></div><section class="card"><div class="actions"><button class="btn ghost" data-action="histSheet">📊 Istoric</button><button class="btn ghost" data-action="exportCsv">Export Excel</button><button class="btn ghost" data-action="exportData">Copie de rezervă</button><button class="btn ghost" data-action="importSheet">Importă</button></div>'+(sync.hid?'<div class="note" style="margin-top:10px">Datele sunt sincronizate în cloud. Dacă imporți, se înlocuiesc datele gospodăriei pentru amândoi.</div></section>':'<div class="actions" style="margin-top:10px"><button class="btn ghost" data-action="setupAsk">Gospodărie nouă, de la zero</button></div><div class="actions" style="margin-top:10px"><button class="btn danger" data-action="resetAsk">Revino la datele inițiale</button></div><div class="note" style="margin-top:10px">Datele rămân în browserul acestui telefon. Exportă-le periodic ca să nu le pierzi.</div></section>');
   return h;
 }
 
@@ -705,13 +713,13 @@ function sheetCatalog(){
 function sheetFixed(id,tpl){
   const f=id==='new'?Object.assign({name:'',cat:'',est:'',paid:null,who:meId(),auto:false,until:''},tpl||{}):S.fixed.find(x=>x.id===id);
   const cats=[...new Set(S.fixed.map(x=>x.cat))];
-  openSheet('<h2>'+(id==='new'?'Plată recurentă nouă':'Editează plata')+'</h2>'+fld('f_name','Nume',f.name,id==='new'&&f.name?'':'data-focus')+fld('f_cat','Categorie',f.cat,'list="cats"')+'<datalist id="cats">'+cats.map(c=>'<option value="'+esc(c)+'">').join('')+'</datalist><div class="two">'+fld('f_est','Sumă estimată (lei)',f.est,'inputmode="decimal"'+(id==='new'&&f.name?' data-focus':''))+fld('f_paid','Sumă plătită (lei)',f.paid==null?'':f.paid,'inputmode="decimal" placeholder="neplătit"')+'</div>'+whoSel(f.who,'Cine o plătește')+fld('f_due','Ziua scadenței din lună (opțional, pentru memento)',f.due||'','inputmode="decimal"')+'<label class="check"><input type="checkbox" id="f_var"'+((id==='new'?VARY_RE.test(f.name||''):f.varies)?' checked':'')+'>Suma variază (te întreb cât ai plătit de fapt, la bifare)</label><label class="check"><input type="checkbox" id="f_auto"'+(f.auto?' checked':'')+'>Se plătește automat din venit (apare bifată în fiecare ciclu nou)</label><div class="fld"><label for="f_until">Până în (opțional, ex. ultima lună de plată)</label><input id="f_until" type="month" value="'+esc(f.until||'')+'"></div><label class="check"><input type="checkbox" id="f_skip"'+(f.skipNext?' checked':'')+'>Nu o mai continua din ciclul următor</label>'+btns('saveFixed',id,'delFixed'));
+  openSheet('<h2>'+(id==='new'?'Plată recurentă nouă':'Editează plata')+'</h2>'+fld('f_name','Nume',f.name,id==='new'&&f.name?'':'data-focus')+fld('f_cat','Categorie',f.cat,'list="cats"')+'<datalist id="cats">'+cats.map(c=>'<option value="'+esc(c)+'">').join('')+'</datalist><div class="two">'+fld('f_est','Sumă estimată (lei)',f.est,'inputmode="decimal"'+(id==='new'&&f.name?' data-focus':''))+fld('f_paid','Sumă plătită (lei)',f.paid==null?'':f.paid,'inputmode="decimal" placeholder="neplătit"')+'</div>'+whoSel(f.who,'Cine o plătește')+'<label class="check"><input type="checkbox" id="f_cash"'+(f.cash?' checked':'')+'>O plătesc de obicei în numerar (scade din numerar, nu din card)</label>'+fld('f_due','Ziua scadenței din lună (opțional, pentru memento)',f.due||'','inputmode="decimal"')+'<label class="check"><input type="checkbox" id="f_var"'+((id==='new'?VARY_RE.test(f.name||''):f.varies)?' checked':'')+'>Suma variază (te întreb cât ai plătit de fapt, la bifare)</label><label class="check"><input type="checkbox" id="f_auto"'+(f.auto?' checked':'')+'>Se plătește automat din venit (apare bifată în fiecare ciclu nou)</label><div class="fld"><label for="f_until">Până în (opțional, ex. ultima lună de plată)</label><input id="f_until" type="month" value="'+esc(f.until||'')+'"></div><label class="check"><input type="checkbox" id="f_skip"'+(f.skipNext?' checked':'')+'>Nu o mai continua din ciclul următor</label>'+btns('saveFixed',id,'delFixed'));
 }
 function sheetPaid(id){
   const f=S.fixed.find(x=>x.id===id);
   const h=f.hist||[];const last=h.length?h[h.length-1]:null;const avg=histAvg(f);
   const info=[];if(last!=null)info.push('luna trecută '+fmt(last)+' lei');if(h.length>1)info.push('media ultimelor '+Math.min(3,h.length)+' luni '+fmt(avg)+' lei');
-  openSheet('<h2>Cât ai plătit?</h2><div class="note">'+esc(f.name)+' · estimat '+fmt(f.est)+' lei'+(info.length?' · '+info.join(' · '):'')+'. Suma reală se scade din bugetul liber, nu estimarea.</div><div class="fld"><label for="f_amt">Suma plătită (lei)</label><input id="f_amt" class="amtin" inputmode="decimal" value="'+esc(f.est)+'" data-focus></div>'+(avg!=null?'<button class="link" data-action="useAvg" data-id="'+id+'">Pune media ('+fmt(avg)+')</button>':'')+'<label class="check"><input type="checkbox" id="f_upd">Actualizează și estimarea pentru lunile următoare</label><div class="actions"><button class="btn" data-action="savePaid" data-id="'+id+'">Salvează</button><button class="btn ghost" data-action="close">Anulează</button></div>');
+  openSheet('<h2>Cât ai plătit?</h2><div class="note">'+esc(f.name)+' · estimat '+fmt(f.est)+' lei'+(info.length?' · '+info.join(' · '):'')+'. Suma reală se scade din bugetul liber, nu estimarea.</div><div class="fld"><label for="f_amt">Suma plătită (lei)</label><input id="f_amt" class="amtin" inputmode="decimal" value="'+esc(f.est)+'" data-focus></div>'+(avg!=null?'<button class="link" data-action="useAvg" data-id="'+id+'">Pune media ('+fmt(avg)+')</button>':'')+'<label class="check"><input type="checkbox" id="f_pcash"'+(f.cash?' checked':'')+'>Plătit cu numerar (scade din numerar, nu din card)</label><label class="check"><input type="checkbox" id="f_upd">Actualizează și estimarea pentru lunile următoare</label><div class="actions"><button class="btn" data-action="savePaid" data-id="'+id+'">Salvează</button><button class="btn ghost" data-action="close">Anulează</button></div>');
 }
 function sheetRate(id){
   const r=id==='new'?{name:'',total:'',n:'',paidAmt:0,who:meId()}:S.rates.find(x=>x.id===id);
@@ -720,7 +728,7 @@ function sheetRate(id){
 function sheetFund(id,tpl){
   const f=id==='new'?Object.assign({name:'',where:'',monthly:'',saved:0,doneAmt:null,goal:''},tpl||{}):S.funds.find(x=>x.id===id);
   const total=id==='new'?(f.saved||0):fundTotal(f);
-  openSheet('<h2>'+(id==='new'?'Pușculiță nouă':'Editează pușculița')+'</h2>'+fld('f_name','Nume',f.name,f.name?'':'data-focus')+fld('f_where','Unde ții banii (opțional)',f.where||'','list="wh" placeholder="ex. Cont de economii"')+'<datalist id="wh">'+WHERE_OPTS.map(w=>'<option value="'+esc(w)+'">').join('')+'</datalist><div class="two">'+fld('f_monthly','Pui deoparte pe lună',f.monthly,'inputmode="decimal"'+(f.name?' data-focus':''))+fld('f_goal','Țintă (opțional)',f.goal||'','inputmode="decimal"')+'</div>'+fld('f_saved','Strâns în total, inclusiv luna asta',total,'inputmode="decimal"')+btns('saveFund',id,'delFund'));
+  openSheet('<h2>'+(id==='new'?'Pușculiță nouă':'Editează pușculița')+'</h2>'+fld('f_name','Nume',f.name,f.name?'':'data-focus')+fld('f_where','Unde ții banii (opțional)',f.where||'','list="wh" placeholder="ex. Cont de economii"')+'<datalist id="wh">'+WHERE_OPTS.map(w=>'<option value="'+esc(w)+'">').join('')+'</datalist><div class="two">'+fld('f_monthly','Pui deoparte pe lună',f.monthly,'inputmode="decimal"'+(f.name?' data-focus':''))+fld('f_goal','Țintă (opțional)',f.goal||'','inputmode="decimal"')+'</div>'+fld('f_gdate','Vrei să ajungi la țintă până la (opțional)',f.goalDate||'','type="date"')+fld('f_saved','Strâns în total, inclusiv luna asta',total,'inputmode="decimal"')+btns('saveFund',id,'delFund'));
 }
 function sheetFundCatalog(){
   openSheet('<h2>Ce pușculiță vrei?</h2><div class="note">Alege o idee sau scrie-ți propria pușculiță. Suma lunară și ținta se setează după.</div><div class="fld"><div class="chips">'+FUND_SUGGEST.map((n,i)=>'<button class="pill" data-action="pickFundTpl" data-i="'+i+'">'+esc(n)+'</button>').join('')+'</div></div><div class="actions"><button class="btn" data-action="customFund">Altă pușculiță</button><button class="btn ghost" data-action="close">Anulează</button></div>');
@@ -747,10 +755,41 @@ function sheetBudget(id){
   const b=id==='new'?{name:'',limit:'',essential:false}:S.budgets.find(x=>x.id===id);
   openSheet('<h2>'+(id==='new'?'Categorie nouă':'Editează categoria')+'</h2>'+fld('f_name','Nume',b.name,'data-focus')+fld('f_lim','Buget pe ciclu (lei)',b.limit,'inputmode="decimal"')+'<label class="check"><input type="checkbox" id="f_ess"'+(b.essential?' checked':'')+'>Esențial (se rezervă din suma liberă)</label>'+btns('saveBudget',id,'delBudget'));
 }
+const IMG={db:null,
+  open(){return new Promise((ok,no)=>{if(IMG.db)return ok(IMG.db);try{const r=indexedDB.open('pb-img',1);r.onupgradeneeded=()=>r.result.createObjectStore('i');r.onsuccess=()=>{IMG.db=r.result;ok(IMG.db);};r.onerror=()=>no(r.error);}catch(e){no(e);}});},
+  put(k,v){return IMG.open().then(db=>new Promise((ok,no)=>{const t=db.transaction('i','readwrite');t.objectStore('i').put(v,k);t.oncomplete=ok;t.onerror=()=>no(t.error);}));},
+  get(k){return IMG.open().then(db=>new Promise((ok,no)=>{const r=db.transaction('i').objectStore('i').get(k);r.onsuccess=()=>ok(r.result||null);r.onerror=()=>no(r.error);}));},
+  del(k){return IMG.open().then(db=>new Promise(ok=>{const t=db.transaction('i','readwrite');t.objectStore('i').delete(k);t.oncomplete=ok;t.onerror=ok;})).catch(()=>{});},
+  shrink(file){return new Promise((ok,no)=>{const u=URL.createObjectURL(file),im=new Image();im.onload=()=>{const m=1100,k=Math.min(1,m/Math.max(im.width,im.height));const c=document.createElement('canvas');c.width=Math.round(im.width*k);c.height=Math.round(im.height*k);c.getContext('2d').drawImage(im,0,0,c.width,c.height);URL.revokeObjectURL(u);ok(c.toDataURL('image/jpeg',0.65));};im.onerror=()=>{URL.revokeObjectURL(u);no(new Error('img'));};im.src=u;});}
+};
 function sheetTx(id){
   const t=id==='new'?{amount:'',cat:S.budgets[0]?S.budgets[0].name:'Altele',note:'',who:meId()}:S.tx.find(x=>x.id===id);
   const cats=S.budgets.map(b=>b.name);if(cats.indexOf(t.cat)<0)cats.push(t.cat);
-  openSheet('<h2>'+(id==='new'?'Cheltuială nouă':'Editează cheltuiala')+'</h2><div class="fld"><label for="f_amt">Suma (lei)</label><input id="f_amt" class="amtin" inputmode="decimal" placeholder="0" value="'+esc(t.amount)+'" data-focus></div><div class="fld"><span class="lab">Categorie</span><div class="chips">'+cats.map(c=>'<label class="chip"><input type="radio" name="cat" value="'+esc(c)+'"'+(c===t.cat?' checked':'')+'><span>'+esc(c)+'</span></label>').join('')+'</div></div>'+fld('f_note','Notă (opțional)',t.note||'','placeholder="ex. Kaufland"')+whoSel(t.who)+'<label class="check"><input type="checkbox" id="f_cash"'+(t.cash?' checked':'')+'>Plătit cu numerar (nu scade din card)</label>'+btns('saveTx',id,'delTx'));
+  openSheet('<h2>'+(id==='new'?'Cheltuială nouă':'Editează cheltuiala')+'</h2><div class="fld"><label for="f_amt">Suma (lei)</label><input id="f_amt" class="amtin" inputmode="decimal" placeholder="0" value="'+esc(t.amount)+'" data-focus></div><div class="fld"><span class="lab">Categorie</span><div class="chips">'+cats.map(c=>'<label class="chip"><input type="radio" name="cat" value="'+esc(c)+'"'+(c===t.cat?' checked':'')+'><span>'+esc(c)+'</span></label>').join('')+'</div></div>'+fld('f_note','Notă (opțional)',t.note||'','placeholder="ex. Kaufland"')+whoSel(t.who)+'<label class="check"><input type="checkbox" id="f_cash"'+(t.cash?' checked':'')+'>Plătit cu numerar (nu scade din card)</label><div class="fld"><span class="lab">Poza bonului (rămâne doar pe acest telefon)</span><input type="file" id="f_img" accept="image/*" capture="environment"><div id="imgbox" class="note">'+(t.img?'<button class="link" data-action="viewImg" data-id="'+id+'">📷 Vezi poza salvată</button>':'')+'</div></div>'+btns('saveTx',id,'delTx'));ui.pendImg=null;
+}
+function sheetQuick(id){
+  const q=id==='new'?{name:'',amount:'',cat:S.budgets[0]?S.budgets[0].name:'Altele',cash:false}:S.quick.find(x=>x.id===id);
+  const cats=S.budgets.map(b=>b.name);if(cats.indexOf(q.cat)<0)cats.push(q.cat);
+  openSheet('<h2>'+(id==='new'?'Plată rapidă nouă':'Editează plata rapidă')+'</h2>'+fld('f_name','Nume',q.name,'data-focus placeholder="ex. Pâine"')+'<div class="fld"><label for="f_amt">Suma (lei)</label><input id="f_amt" class="amtin" inputmode="decimal" value="'+esc(q.amount)+'"></div><div class="fld"><span class="lab">Categorie</span><div class="chips">'+cats.map(c=>'<label class="chip"><input type="radio" name="cat" value="'+esc(c)+'"'+(c===q.cat?' checked':'')+'><span>'+esc(c)+'</span></label>').join('')+'</div></div><label class="check"><input type="checkbox" id="f_cash"'+(q.cash?' checked':'')+'>Plătit de obicei cu numerar</label>'+btns('saveQuick',id,'delQuick'));
+}
+function sheetQuickList(){
+  openSheet('<h2>Plăți rapide</h2><div class="note">Apeși pe una în tabul Cheltuieli și se adaugă pe loc, cu data de azi și pe numele tău.</div>'+(S.quick.length?S.quick.map(q=>'<div class="row"><button class="rowmain" data-action="editQuick" data-id="'+q.id+'"><span class="t">'+esc(q.name)+'</span><span class="s">'+esc(q.cat)+(q.cash?' · numerar':'')+'</span></button><span class="amt">'+fmt(q.amount)+'</span></div>').join(''):'')+'<div class="actions"><button class="btn" data-action="addQuick">+ Plată rapidă</button><button class="btn ghost" data-action="close">Închide</button></div>');
+}
+function sheetHist(){
+  const H=(S.hist||[]).slice().reverse();
+  const mx=Math.max.apply(null,[1].concat(H.map(x=>Math.max(x.inc,x.spent))));
+  openSheet('<h2>Istoric pe cicluri</h2>'+(H.length?H.map(x=>{const cats=Object.keys(x.cats||{}).filter(k=>x.cats[k]>0).sort((a,b)=>x.cats[b]-x.cats[a]).slice(0,4).map(k=>esc(k)+' '+fmt(x.cats[k])).join(' · ');
+    const a=parseISO(x.from),b=parseISO(x.to);
+    return '<div class="card" style="margin:8px 0;box-shadow:none"><div class="frow"><b>'+shortDate(a)+' – '+shortDate(b)+' '+b.getFullYear()+'</b><span>rămas '+fmt(x.inc-x.spent-(x.saved||0))+'</span></div><div class="prog" aria-hidden="true"><i style="width:'+Math.min(100,x.inc/mx*100)+'%;opacity:.35"></i></div><div class="prog" aria-hidden="true" style="margin-top:4px"><i style="width:'+Math.min(100,x.spent/mx*100)+'%"></i></div><div class="note" style="margin-top:6px">Încasat '+fmt(x.inc)+' · cheltuit '+fmt(x.spent)+(x.saved>0?' · pus deoparte '+fmt(x.saved):'')+(cats?'<br>Pe categorii: '+cats:'')+'</div></div>';}).join(''):'<div class="note">Istoricul apare după primul ciclu încheiat. Apasă „Începe ciclul nou” la următorul salariu.</div>')+'<div class="actions"><button class="btn ghost" data-action="close">Închide</button></div>');
+}
+function csvText(){
+  const q=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
+  const rows=[['Data','Tip','Categorie','Suma','Nota','Cine','Numerar']];
+  S.tx.slice().sort((a,b)=>a.date<b.date?-1:1).forEach(t=>{
+    const tip=t.type==='transfer'?'Transfer':(t.type==='cash'?'Retragere numerar':'Cheltuială');
+    const cine=t.type==='transfer'||t.type==='cash'?memberName(t.from)+' > '+memberName(t.to):memberName(t.who);
+    rows.push([t.date,tip,t.cat||'',String(t.amount).replace('.',','),t.note||'',cine,t.cash?'da':'']);});
+  return '\ufeff'+rows.map(r=>r.map(q).join(';')).join('\r\n');
 }
 function sheetXfer(id){
   const t=id==='new'?{amount:'',note:'',from:meId(),to:(M().find(m=>m.id!==meId())||M()[0]).id}:S.tx.find(x=>x.id===id);
@@ -782,18 +821,28 @@ function act(a,d){
     case 'xferDone':{const t=find(S.tx);t.done=true;commit();break;}
     case 'addCash':sheetCash('new');break;
     case 'saveCash':{const a=num(val('f_amt'));if(a<=0)return;const fr=val('f_from'),to=val('f_to')||fr;const o={amount:a,from:fr,to:to,who:fr,note:val('f_note').trim(),cat:'Numerar',type:'cash'};if(d.id==='new')S.tx.push(Object.assign({id:uid('t'),date:iso(TODAY())},o));else Object.assign(find(S.tx),o);closeSheet();commit();break;}
+    case 'quickList':sheetQuickList();break;
+    case 'addQuick':sheetQuick('new');break;
+    case 'editQuick':sheetQuick(d.id);break;
+    case 'saveQuick':{const name=val('f_name').trim(),a=num(val('f_amt'));if(!name||a<=0)return;const ce=document.querySelector('input[name=cat]:checked');const o={name:name,amount:a,cat:ce?ce.value:'Altele',cash:chk('f_cash')};if(d.id==='new')S.quick.push(Object.assign({id:uid('q')},o));else Object.assign(find(S.quick),o);closeSheet();commit();break;}
+    case 'delQuick':S.quick=S.quick.filter(x=>x.id!==d.id);closeSheet();commit();break;
+    case 'quickAdd':{const q=find(S.quick);S.tx.push({id:uid('t'),date:iso(TODAY()),cat:q.cat,amount:q.amount,note:q.name,who:meId(),cash:!!q.cash});commit();break;}
     case 'addXfer':sheetXfer('new');break;
     case 'saveXfer':{const a=num(val('f_amt'));const fr=val('f_from'),to=val('f_to');if(a<=0||fr===to)return;const o={amount:a,from:fr,to:to,who:fr,note:val('f_note').trim(),cat:'Transfer',type:'transfer'};if(d.id==='new')S.tx.push(Object.assign({id:uid('t'),date:iso(TODAY())},o));else Object.assign(find(S.tx),o);closeSheet();commit();break;}
     case 'saveTx':{
       const amt=num(val('f_amt'));if(amt<=0){return;}
       const catEl=document.querySelector('input[name=cat]:checked');const cat=catEl?catEl.value:'Altele';
-      if(d.id==='new')S.tx.push({id:uid('t'),date:iso(TODAY()),cat:cat,amount:amt,note:val('f_note').trim(),who:whoVal(),cash:chk('f_cash')});
+      let tid=d.id;
+      if(d.id==='new'){tid=uid('t');S.tx.push({id:tid,date:iso(TODAY()),cat:cat,amount:amt,note:val('f_note').trim(),who:whoVal(),cash:chk('f_cash')});}
       else{const t=find(S.tx);t.amount=amt;t.cat=cat;t.note=val('f_note').trim();t.who=whoVal();t.cash=chk('f_cash');}
+      if(ui.pendImg){const t=S.tx.find(x=>x.id===tid);t.img=true;IMG.put('t:'+tid,ui.pendImg).catch(()=>{});ui.pendImg=null;}
       closeSheet();commit();break;}
-    case 'delTx':S.tx=S.tx.filter(x=>x.id!==d.id);closeSheet();commit();break;
+    case 'viewImg':{IMG.get('t:'+d.id).then(v=>{const b=document.getElementById('imgbox');if(b)b.innerHTML=v?'<img alt="Bon" style="max-width:100%;border-radius:10px" src="'+v+'"><br><button class="link" data-action="rmImg" data-id="'+d.id+'">Șterge poza</button>':'Poza nu e pe acest telefon (se păstrează doar pe cel care a făcut-o).';}).catch(()=>{});break;}
+    case 'rmImg':{IMG.del('t:'+d.id);const t=S.tx.find(x=>x.id===d.id);if(t)delete t.img;commit();const b=document.getElementById('imgbox');if(b)b.innerHTML='Poza a fost ștearsă.';break;}
+    case 'delTx':IMG.del('t:'+d.id);S.tx=S.tx.filter(x=>x.id!==d.id);closeSheet();commit();break;
 
     case 'togFixed':{const f=find(S.fixed);if(f.paid!=null){f.paid=null;commit();}else if(f.varies)sheetPaid(f.id);else{f.paid=f.est;commit();}break;}
-    case 'savePaid':{const f=find(S.fixed);const a=val('f_amt').trim();if(a==='')return;f.paid=num(a);if(chk('f_upd'))f.est=f.paid;closeSheet();commit();break;}
+    case 'savePaid':{const f=find(S.fixed);const a=val('f_amt').trim();if(a==='')return;f.paid=num(a);f.cash=chk('f_pcash');if(chk('f_upd'))f.est=f.paid;closeSheet();commit();break;}
     case 'useAvg':{const f=find(S.fixed);const a=histAvg(f);if(a!=null){const e=document.getElementById('f_amt');if(e)e.value=(Math.round(a*100)/100).toString().replace('.',',');}break;}
     case 'addFixed':sheetCatalog();break;
     case 'pickTpl':{const x=CATALOG[parseInt(d.i,10)];if(x.k==='fund')sheetFund('new',{name:x.n});else sheetFixed('new',{name:x.n,cat:x.c});break;}
@@ -802,7 +851,7 @@ function act(a,d){
     case 'saveFixed':{
       const name=val('f_name').trim();if(!name)return;
       const pr=val('f_paid').trim();
-      const o={name:name,cat:val('f_cat').trim()||'Altele',est:num(val('f_est')),paid:pr===''?null:num(pr),who:whoVal(),auto:chk('f_auto'),varies:chk('f_var'),due:(()=>{const n=Math.round(num(val('f_due')));return n>=1&&n<=31?n:null;})(),until:val('f_until')||'',skipNext:chk('f_skip')};
+      const o={name:name,cat:val('f_cat').trim()||'Altele',est:num(val('f_est')),paid:pr===''?null:num(pr),who:whoVal(),auto:chk('f_auto'),varies:chk('f_var'),cash:chk('f_cash'),due:(()=>{const n=Math.round(num(val('f_due')));return n>=1&&n<=31?n:null;})(),until:val('f_until')||'',skipNext:chk('f_skip')};
       if(d.id==='new')S.fixed.push(Object.assign({id:uid('f')},o));else Object.assign(find(S.fixed),o);
       closeSheet();commit();break;}
     case 'delFixed':S.fixed=S.fixed.filter(x=>x.id!==d.id);closeSheet();commit();break;
@@ -836,10 +885,11 @@ function act(a,d){
     case 'saveFund':{
       const name=val('f_name').trim();if(!name)return;
       const total=Math.max(0,num(val('f_saved')));
-      const o={name:name,where:val('f_where').trim(),monthly:num(val('f_monthly')),goal:num(val('f_goal'))};
+      const o={name:name,where:val('f_where').trim(),monthly:num(val('f_monthly')),goal:num(val('f_goal')),goalDate:val('f_gdate')||''};
       if(d.id==='new')S.funds.push(Object.assign({id:uid('u'),doneAmt:null,saved:total},o));
       else{const f=find(S.funds);Object.assign(f,o);f.saved=Math.max(0,total-(f.doneAmt||0));}
       closeSheet();commit();break;}
+    case 'useNeed':{const f=find(S.funds);f.monthly=num(d.v);commit();break;}
     case 'delFund':S.funds=S.funds.filter(x=>x.id!==d.id);closeSheet();commit();break;
 
     case 'togIncome':{const i=find(S.incomes);if(i.kind==='irregular'&&!i.received)sheetGot(i.id);else{setReceived(S,i,!i.received);commit();}break;}
@@ -897,6 +947,9 @@ function act(a,d){
       if(chk('f_hasp'))o.partner={name:val('f_pname').trim()||'Partener',income:num(val('f_pinc')),day:num(val('f_pday'))||o.day};
       S=blankState(o,TODAY());if(sess&&sync.hid)S.household.members[0].uid=sess.uid;ui.delay=0;ui.who='all';closeSheet();ui.tab='home';commit();break;}
 
+    case 'histSheet':sheetHist();break;
+    case 'exportCsv':{const t=csvText();openSheet('<h2>Export Excel (CSV)</h2><div class="note">Toate cheltuielile, transferurile și retragerile. Descarcă fișierul sau copiază textul și lipește-l în Excel / Google Sheets.</div><div class="fld"><textarea id="exp" readonly>'+esc(t)+'</textarea></div><div class="actions"><button class="btn" data-action="dlCsv">Descarcă .csv</button><button class="btn ghost" data-action="copyExp">Copiază</button><button class="btn ghost" data-action="close">Închide</button></div>');break;}
+    case 'dlCsv':{try{const b=new Blob([csvText()],{type:'text/csv;charset=utf-8'});const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download='pusculitescu-cheltuieli.csv';document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(u);a.remove();},1500);}catch(e){}break;}
     case 'exportData':openSheet('<h2>Exportă datele</h2><div class="note">Copiază textul și păstrează-l într-o notiță. Îl poți lipi înapoi la „Importă”.</div><div class="fld"><textarea id="exp" readonly>'+esc(JSON.stringify(S))+'</textarea></div><div class="actions"><button class="btn" data-action="copyExp">Copiază</button><button class="btn ghost" data-action="close">Închide</button></div>');break;
     case 'copyExp':{const t=document.getElementById('exp');t.select();try{navigator.clipboard.writeText(t.value).then(()=>{},()=>{});}catch(e){}break;}
     case 'importSheet':openSheet('<h2>Importă datele</h2><div class="note">Lipește textul exportat anterior. Datele curente vor fi înlocuite.</div><div class="fld"><textarea id="imp" placeholder="Lipește aici" data-focus></textarea></div><div class="actions"><button class="btn" data-action="doImport">Importă</button><button class="btn ghost" data-action="close">Anulează</button></div>');break;
@@ -953,6 +1006,7 @@ document.addEventListener('input',e=>{
 document.addEventListener('change',e=>{
   if(e.target.id==='whof'){ui.who=e.target.value;render();}
   if(e.target.id==='f_var')e.target.dataset.t='1';
+  if(e.target.id==='f_img'&&e.target.files&&e.target.files[0]){const b=document.getElementById('imgbox');if(b)b.textContent='Se pregătește poza…';IMG.shrink(e.target.files[0]).then(u=>{ui.pendImg=u;if(b)b.innerHTML='<img alt="Bon" style="max-width:60%;border-radius:10px" src="'+u+'"><br>Poza se salvează odată cu cheltuiala.';}).catch(()=>{if(b)b.textContent='Nu am putut citi poza.';});}
   if(e.target.id==='f_kind'){const b=document.getElementById('fkbox');if(b)b.hidden=e.target.value!=='draw';}
   if(e.target.id==='f_mode'){const v=e.target.value;const sb=document.getElementById('sbox');if(sb)sb.hidden=v!=='sav';const l=document.querySelector('label[for=f_inc]');if(l)l.textContent=v==='sav'?'Retragi pe lună (lei)':(v==='var'?'Venit lunar estimat (lei)':'Venitul tău lunar (lei)');}
   if(e.target.id==='f_hasp'){const p=document.getElementById('pbox');if(p)p.hidden=!e.target.checked;}
@@ -967,7 +1021,7 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('#sheet').hidden
 const SBC=window.__SB__||{url:'https://kxumndvaegvcbftnodnd.supabase.co',key:'sb_publishable_K7oeDJTSKuaoJYqHSgVREQ_CLlHA-Jz'};
 const SESS_KEY='pb-session-v1',SYNC_KEY='pb-sync-v1',LOCAL_KEY='pb-local-ok';
 const EPOCH='1970-01-01T00:00:00.000Z';
-const KINDS={income:'incomes',fixed:'fixed',rate:'rates',budget:'budgets',tx:'tx',fund:'funds'};
+const KINDS={income:'incomes',fixed:'fixed',rate:'rates',budget:'budgets',tx:'tx',fund:'funds',hist:'hist',quick:'quick'};
 const rd=k=>{try{return JSON.parse(localStorage.getItem(k));}catch(e){return null;}};
 const wr=(k,v)=>{try{if(v==null)localStorage.removeItem(k);else localStorage.setItem(k,JSON.stringify(v));}catch(e){}};
 let sess=rd(SESS_KEY);
@@ -1230,7 +1284,7 @@ function showHh(msg){
     +'<button class="link" data-action="logout">Ieși din cont</button>');
 }
 function emptyState(){
-  return {v:2,household:{name:'Gospodăria mea',members:[{id:'m1',name:'Eu'}]},settings:{payday:25,grace:5,cycleStart:iso(TODAY())},incomes:[],fixed:[],rates:[],budgets:[],tx:[],funds:[]};
+  return {v:2,household:{name:'Gospodăria mea',members:[{id:'m1',name:'Eu'}]},settings:{payday:25,grace:5,cycleStart:iso(TODAY())},incomes:[],fixed:[],rates:[],budgets:[],tx:[],funds:[],hist:[],quick:[]};
 }
 async function doAuth(signup){
   const email=val('a_email').trim(),pw=val('a_pass');
