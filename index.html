@@ -77,6 +77,11 @@ main{flex:1;overflow-y:auto;padding:4px 16px 120px;-webkit-overflow-scrolling:to
 .holdcard .n{font:800 34px/1.05 var(--display);color:var(--hold);letter-spacing:-.02em;margin:2px 0 6px}
 .holdcard .lg{padding-top:6px}
 .link{color:var(--accent);font-weight:600;padding:6px 0}
+.calnav{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}.calnav h2{margin:0;font-size:18px}.calnav .btn{width:44px;padding:8px 0;flex:none}
+.calg{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}.calh{text-align:center;font-size:12px;opacity:.6;padding:2px 0}
+.calc{min-height:58px;border:1px solid var(--line,rgba(128,128,128,.25));border-radius:10px;display:flex;flex-direction:column;align-items:flex-start;justify-content:space-between;padding:4px 5px;text-align:left;color:inherit}
+.calc .cald{font-size:11px;opacity:.7}.calc b{font-size:12px;align-self:flex-end;font-variant-numeric:tabular-nums}
+.calc.today{outline:2px solid var(--accent)}.calc.sel{box-shadow:0 0 0 2px var(--ink,currentColor) inset}
 .authscr .link{display:block;width:100%;text-align:left;padding:12px 0;margin-top:4px}
 .authscr .card .link+.link{border-top:1px solid var(--line,rgba(128,128,128,.25));margin-top:6px;padding-top:14px}
 .banner{border-radius:14px;padding:14px;background:var(--warn-soft);color:var(--ink);display:flex;flex-direction:column;gap:10px;align-items:flex-start}
@@ -673,8 +678,8 @@ function vMai(c){
   h+='<button class="link" data-action="editIncome" data-id="new">+ Adaugă venit</button><button class="link" data-action="addStart">+ Sold de pornire (banii de pe card dinainte de salariu)</button><button class="link" data-action="addOnce">+ Bani primiți ocazional (bonus, cadou)</button></section>';
   h+='<div class="sec"><h3>Ciclul de salariu</h3></div><section class="card"><div class="two"><div class="fld"><label for="s_pay">Ziua principală</label><input id="s_pay" inputmode="numeric" value="'+S.settings.payday+'"></div><div class="fld"><label for="s_grace">Zile de grație</label><input id="s_grace" inputmode="numeric" value="'+S.settings.grace+'"></div></div><div class="note" style="margin:8px 0 12px">Ziua principală e ziua în care se închide ciclul, de obicei ziua salariului. Zilele de grație sunt câte zile ești dispus să aștepți dacă un salariu întârzie.</div><div class="actions"><button class="btn" data-action="saveSettings">Salvează</button><button class="btn ghost" data-action="newCycle">Începe ciclul nou</button></div></section>';
   h+='<div class="sec"><h3>Gospodărie</h3><span>'+M().length+' '+(M().length===1?'membru':'membri')+'</span></div><section class="card">'+M().map(m=>'<div class="row"><button class="rowmain" data-action="editMember" data-id="'+m.id+'"><span class="t">'+esc(m.name)+'</span><span class="s">'+fmt(sum(S.incomes.filter(i=>i.who===m.id),i=>i.amount))+' lei venit lunar'+(sync.hid?(m.uid?' · cont conectat':' · fără cont conectat'):'')+'</span></button></div>').join('')+'<div class="fld" style="margin-top:8px"><label for="s_mem">Adaugă un membru (partener sau alt adult cu venit)</label><div class="actions"><input id="s_mem" class="inl" placeholder="Nume" style="flex:2"><button class="btn" data-action="addMember">Adaugă</button></div></div><div class="note" style="margin-top:8px">Calculul se face pe totalul gospodăriei. În prototip, membrii se văd doar pe acest telefon. Invitarea unui partener cu cont propriu vine în versiunea cu server.</div></section>';
-  h+='<div class="sec"><h3>Despre</h3></div><section class="card"><div class="row"><span class="t">Pușculițescu</span><span class="amt">versiunea 4 · nov 2026</span></div><button class="link" data-action="privacy">Confidențialitate</button></section>';
-  h+='<div class="sec"><h3>Datele tale</h3></div><section class="card"><div class="actions"><button class="btn ghost" data-action="histSheet">📊 Istoric</button><button class="btn ghost" data-action="exportCsv">Export Excel</button><button class="btn ghost" data-action="exportData">Copie de rezervă</button><button class="btn ghost" data-action="importSheet">Importă</button></div>'+(sync.hid?'<div class="note" style="margin-top:10px">Datele sunt sincronizate în cloud. Dacă imporți, se înlocuiesc datele gospodăriei pentru amândoi.</div></section>':'<div class="actions" style="margin-top:10px"><button class="btn ghost" data-action="setupAsk">Gospodărie nouă, de la zero</button></div><div class="actions" style="margin-top:10px"><button class="btn danger" data-action="resetAsk">Revino la datele inițiale</button></div><div class="note" style="margin-top:10px">Datele rămân în browserul acestui telefon. Exportă-le periodic ca să nu le pierzi.</div></section>');
+  h+='<div class="sec"><h3>Despre</h3></div><section class="card"><div class="row"><span class="t">Pușculițescu</span><span class="amt">versiunea 5 · nov 2026</span></div><button class="link" data-action="privacy">Confidențialitate</button></section>';
+  h+='<div class="sec"><h3>Datele tale</h3></div><section class="card"><div class="actions"><button class="btn ghost" data-action="histSheet">📊 Istoric</button><button class="btn ghost" data-action="calSheet">🗓️ Calendar cheltuieli</button><button class="btn ghost" data-action="exportCsv">Export Excel</button><button class="btn ghost" data-action="exportData">Copie de rezervă</button><button class="btn ghost" data-action="importSheet">Importă</button></div>'+(sync.hid?'<div class="note" style="margin-top:10px">Datele sunt sincronizate în cloud. Dacă imporți, se înlocuiesc datele gospodăriei pentru amândoi.</div></section>':'<div class="actions" style="margin-top:10px"><button class="btn ghost" data-action="setupAsk">Gospodărie nouă, de la zero</button></div><div class="actions" style="margin-top:10px"><button class="btn danger" data-action="resetAsk">Revino la datele inițiale</button></div><div class="note" style="margin-top:10px">Datele rămân în browserul acestui telefon. Exportă-le periodic ca să nu le pierzi.</div></section>');
   return h;
 }
 
@@ -776,6 +781,27 @@ function sheetQuick(id){
 }
 function sheetQuickList(){
   openSheet('<h2>Plăți rapide</h2><div class="note">Apeși pe una în tabul Cheltuieli și se adaugă pe loc, cu data de azi și pe numele tău.</div>'+(S.quick.length?S.quick.map(q=>'<div class="row"><button class="rowmain" data-action="editQuick" data-id="'+q.id+'"><span class="t">'+esc(q.name)+'</span><span class="s">'+esc(q.cat)+(q.cash?' · numerar':'')+'</span></button><span class="amt">'+fmt(q.amount)+'</span></div>').join(''):'')+'<div class="actions"><button class="btn" data-action="addQuick">+ Plată rapidă</button><button class="btn ghost" data-action="close">Închide</button></div>');
+}
+const MONTHS_RO=['Ianuarie','Februarie','Martie','Aprilie','Mai','Iunie','Iulie','August','Septembrie','Octombrie','Noiembrie','Decembrie'];
+function sheetCal(){
+  const t0=TODAY();if(!ui.cal)ui.cal={y:t0.getFullYear(),m:t0.getMonth(),sel:null};
+  const y=ui.cal.y,m=ui.cal.m,pad=n=>(n<10?'0':'')+n,key=d=>y+'-'+pad(m+1)+'-'+pad(d);
+  const days=new Date(y,m+1,0).getDate(),first=(new Date(y,m,1).getDay()+6)%7;
+  const sum={},cnt={};
+  S.tx.forEach(x=>{if(x.type==='transfer'||x.type==='cash')return;if(x.date.slice(0,7)!==y+'-'+pad(m+1))return;sum[x.date]=(sum[x.date]||0)+x.amount;cnt[x.date]=(cnt[x.date]||0)+1;});
+  const vals=Object.keys(sum).map(k=>sum[k]);const mx=Math.max.apply(null,[1].concat(vals));const total=vals.reduce((a,b)=>a+b,0);
+  let best=null;Object.keys(sum).forEach(k=>{if(best===null||sum[k]>sum[best])best=k;});
+  const whole=v=>Math.round(v).toLocaleString('ro-RO');
+  let g='<div class="calg">'+['L','M','M','J','V','S','D'].map(d=>'<div class="calh">'+d+'</div>').join('');
+  for(let i=0;i<first;i++)g+='<div></div>';
+  for(let d=1;d<=days;d++){const k=key(d),v=sum[k]||0;
+    g+='<button class="calc'+(ui.cal.sel===k?' sel':'')+(k===iso(t0)?' today':'')+'" data-action="calSel" data-d="'+k+'" style="'+(v>0?'background:color-mix(in srgb,var(--accent) '+Math.round(12+v/mx*55)+'%,transparent)':'')+'"><span class="cald">'+d+'</span><b>'+(v>0?whole(v):'')+'</b></button>';}
+  g+='</div>';
+  let det='';
+  if(ui.cal.sel){const L=S.tx.filter(x=>x.date===ui.cal.sel&&x.type!=='transfer'&&x.type!=='cash');const dd=parseISO(ui.cal.sel);
+    det='<div class="card" style="margin-top:10px;box-shadow:none"><div class="frow"><b>'+dd.getDate()+' '+MONTHS_RO[dd.getMonth()].toLowerCase()+'</b><span>'+fmt(sum[ui.cal.sel]||0)+' lei</span></div>'+(L.length?L.map(x=>'<div class="frow"><span>'+esc(x.note||x.cat)+' <small>'+esc(x.cat)+(multi()?' · '+esc(memberName(x.who)):'')+(x.cash?' · numerar':'')+'</small></span><b style="font-size:15px">−'+fmt(x.amount)+'</b></div>').join(''):'<div class="note">Nicio cheltuială în ziua asta.</div>')+'</div>';}
+  const avg=total/(m===t0.getMonth()&&y===t0.getFullYear()?t0.getDate():days);
+  openSheet('<div class="calnav"><button class="btn ghost" data-action="calPrev" aria-label="Luna trecută">‹</button><h2>'+MONTHS_RO[m]+' '+y+'</h2><button class="btn ghost" data-action="calNext" aria-label="Luna următoare">›</button></div>'+g+'<div class="note" style="margin-top:10px">Total '+fmt(total)+' lei · medie '+fmt(avg)+' lei/zi'+(best?' · cea mai mare zi: '+parseISO(best).getDate()+' ('+fmt(sum[best])+' lei)':'')+'.<br>Sumele din celule sunt rotunjite. Apasă pe o zi ca să vezi cheltuielile. Plățile recurente bifate în Plăți nu au dată, deci nu apar aici.</div>'+det+'<div class="actions"><button class="btn ghost" data-action="close">Închide</button></div>');
 }
 function sheetHist(){
   const H=(S.hist||[]).slice().reverse();
@@ -950,6 +976,10 @@ function act(a,d){
       S=blankState(o,TODAY());if(sess&&sync.hid)S.household.members[0].uid=sess.uid;ui.delay=0;ui.who='all';closeSheet();ui.tab='home';commit();break;}
 
     case 'histSheet':sheetHist();break;
+    case 'calSheet':{const t=TODAY();ui.cal={y:t.getFullYear(),m:t.getMonth(),sel:null};sheetCal();break;}
+    case 'calPrev':{ui.cal.m--;if(ui.cal.m<0){ui.cal.m=11;ui.cal.y--;}ui.cal.sel=null;sheetCal();break;}
+    case 'calNext':{ui.cal.m++;if(ui.cal.m>11){ui.cal.m=0;ui.cal.y++;}ui.cal.sel=null;sheetCal();break;}
+    case 'calSel':{ui.cal.sel=ui.cal.sel===d.d?null:d.d;sheetCal();break;}
     case 'exportCsv':{const t=csvText();openSheet('<h2>Export Excel (CSV)</h2><div class="note">Toate cheltuielile, transferurile și retragerile. Descarcă fișierul sau copiază textul și lipește-l în Excel / Google Sheets.</div><div class="fld"><textarea id="exp" readonly>'+esc(t)+'</textarea></div><div class="actions"><button class="btn" data-action="dlCsv">Descarcă .csv</button><button class="btn ghost" data-action="copyExp">Copiază</button><button class="btn ghost" data-action="close">Închide</button></div>');break;}
     case 'dlCsv':{try{const b=new Blob([csvText()],{type:'text/csv;charset=utf-8'});const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download='pusculitescu-cheltuieli.csv';document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(u);a.remove();},1500);}catch(e){}break;}
     case 'exportData':openSheet('<h2>Exportă datele</h2><div class="note">Copiază textul și păstrează-l într-o notiță. Îl poți lipi înapoi la „Importă”.</div><div class="fld"><textarea id="exp" readonly>'+esc(JSON.stringify(S))+'</textarea></div><div class="actions"><button class="btn" data-action="copyExp">Copiază</button><button class="btn ghost" data-action="close">Închide</button></div>');break;
