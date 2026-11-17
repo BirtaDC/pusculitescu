@@ -455,36 +455,37 @@ function commit(){save();render();schedule();}
 const FXK='plic-fx';
 const FX_PROXY='';
 const FXC=[['EUR','Euro'],['USD','Dolar american'],['GBP','Liră sterlină'],['CHF','Franc elvețian'],['HUF','Forint maghiar'],['PLN','Zlot polonez'],['BGN','Leva bulgărească'],['CZK','Coroană cehă'],['MDL','Leu moldovenesc'],['TRY','Liră turcească'],['UAH','Hrivnă ucraineană'],['RSD','Dinar sârbesc'],['SEK','Coroană suedeză'],['NOK','Coroană norvegiană'],['DKK','Coroană daneză'],['CAD','Dolar canadian'],['AUD','Dolar australian'],['JPY','Yen japonez']];
+let fxFail=false;
 let FX=(()=>{try{return JSON.parse(localStorage.getItem(FXK))||null;}catch(e){return null;}})();
 const fxr2=x=>Math.round(x*100)/100;
 const dateRo=d=>{if(!d)return '';const p=String(d).split('-');return p.length===3?p[2]+'.'+p[1]+'.'+p[0]:d;};
 function fxRate(c){if(!c||c==='RON')return 1;return FX&&FX.rates&&FX.rates[c]||null;}
 function curList(){const l=FXC.map(x=>x[0]).filter(c=>FX&&FX.rates&&FX.rates[c]);return l.length?l:['EUR','USD','GBP','CHF'];}
-function fxSrcLabel(){if(!FX)return 'Cursul nu e încă descărcat. Conectează-te la internet.';return (FX.src==='BNR'?'Curs BNR':'Curs BCE (BNR indisponibil acum)')+' din '+dateRo(FX.date);}
-async function fxFetchBnr(){
-  const r=await fetch(FX_PROXY||'https://www.bnr.ro/nbrfxrates.xml',{cache:'no-store'});
-  if(!r.ok)throw new Error('http');
-  const x=new DOMParser().parseFromString(await r.text(),'text/xml');
+function fxSrcLabel(){if(!FX)return fxFail?'Nu am putut descărca cursul. Verifică internetul și apasă „Reîmprospătează cursul”.':'Se descarcă cursul…';return (FX.src==='BNR'?'Curs BNR':'Curs BCE (BNR indisponibil acum)')+' din '+dateRo(FX.date);}
+function fxParseBnr(txt){
+  const x=new DOMParser().parseFromString(txt,'text/xml');
   const cube=x.getElementsByTagName('Cube')[0];const date=cube&&cube.getAttribute('date');
   const rates={};
   Array.from(x.getElementsByTagName('Rate')).forEach(n=>{const c=n.getAttribute('currency');const m=parseFloat(n.getAttribute('multiplier')||'1')||1;const v=parseFloat(n.textContent);if(c&&v>0)rates[c]=v/m;});
   if(!rates.EUR)throw new Error('parse');
   return {date:date||iso(TODAY()),src:'BNR',rates:rates};
 }
-async function fxFetchEcb(){
-  const r=await fetch('https://api.frankfurter.app/latest?from=RON',{cache:'no-store'});
-  if(!r.ok)throw new Error('http');
-  const j=await r.json();const rates={};
-  Object.keys(j.rates||{}).forEach(c=>{if(j.rates[c]>0)rates[c]=1/j.rates[c];});
-  if(!rates.EUR)throw new Error('parse');
-  return {date:j.date,src:'BCE',rates:rates};
-}
+const BNR_URL='https://www.bnr.ro/nbrfxrates.xml';
+const fxTO=(u,o)=>{const c=new AbortController();const t=setTimeout(()=>c.abort(),8000);return fetch(u,Object.assign({cache:'no-store',signal:c.signal},o||{})).finally(()=>clearTimeout(t));};
+const FX_SOURCES=[
+  async()=>{const r=await fxTO(FX_PROXY||BNR_URL);if(!r.ok)throw 0;return fxParseBnr(await r.text());},
+  async()=>{const r=await fxTO('https://api.allorigins.win/raw?url='+encodeURIComponent(BNR_URL));if(!r.ok)throw 0;return fxParseBnr(await r.text());},
+  async()=>{const r=await fxTO('https://corsproxy.io/?url='+encodeURIComponent(BNR_URL));if(!r.ok)throw 0;return fxParseBnr(await r.text());},
+  async()=>{const r=await fxTO('https://api.frankfurter.dev/v1/latest?base=RON');if(!r.ok)throw 0;const j=await r.json();const rates={};Object.keys(j.rates||{}).forEach(c=>{if(j.rates[c]>0)rates[c]=1/j.rates[c];});if(!rates.EUR)throw 0;return {date:j.date,src:'BCE',rates:rates};},
+  async()=>{const r=await fxTO('https://open.er-api.com/v6/latest/RON');if(!r.ok)throw 0;const j=await r.json();const rates={};Object.keys(j.rates||{}).forEach(c=>{if(c!=='RON'&&j.rates[c]>0)rates[c]=1/j.rates[c];});if(!rates.EUR)throw 0;return {date:new Date(j.time_last_update_unix*1000).toISOString().slice(0,10),src:'BCE',rates:rates};}
+];
 async function fxLoad(force){
   if(!force&&FX&&FX.at&&Date.now()-FX.at<6*3600*1000&&FX.src==='BNR')return;
   if(!force&&FX&&FX.at&&Date.now()-FX.at<30*60*1000)return;
   let n=null;
-  try{n=await fxFetchBnr();}catch(e){try{n=await fxFetchEcb();}catch(e2){n=null;}}
+  for(const f of FX_SOURCES){try{n=await f();if(n)break;}catch(e){n=null;}}
   if(n){n.at=Date.now();FX=n;try{localStorage.setItem(FXK,JSON.stringify(FX));}catch(e){}}
+  else if(!FX)fxFail=true;
   fxApply();fxHint();
   if(!document.getElementById('sheet').hidden&&document.getElementById('cv_out'))fxConv();
 }
@@ -516,7 +517,7 @@ function fxConv(){
   const rf=fxRate(f),rt=fxRate(t);
   o.innerHTML=(rf&&rt)?fmt(a*rf/rt)+' <span>'+esc(t)+'</span>':'—';
   document.getElementById('cv_src').textContent=fxSrcLabel();
-  document.getElementById('cv_tab').innerHTML=curList().map(c=>{const r=fxRate(c);const big=r<0.1;const nm=(FXC.find(x=>x[0]===c)||[])[1]||'';return '<div class="row"><span class="t">'+(big?'100 ':'1 ')+c+' <small>'+esc(nm)+'</small></span><span class="amt">'+fmt(big?r*100:r,4)+' lei</span></div>';}).join('');
+  document.getElementById('cv_tab').innerHTML=!FX?'<div class="row"><span class="t">—</span></div>':curList().map(c=>{const r=fxRate(c);const big=r<0.1;const nm=(FXC.find(x=>x[0]===c)||[])[1]||'';return '<div class="row"><span class="t">'+(big?'100 ':'1 ')+c+' <small>'+esc(nm)+'</small></span><span class="amt">'+fmt(big?r*100:r,4)+' lei</span></div>';}).join('');
 }
 
 /* ---------- v7: temă, anulare, rezumat, ghid ---------- */
