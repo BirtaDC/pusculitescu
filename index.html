@@ -474,7 +474,7 @@ function fxParseBnr(txt){
   const dm=/<Cube\b[^>]*date\s*=\s*["']([\d-]+)["']/i.exec(txt);
   return {date:dm?dm[1]:iso(TODAY()),src:'BNR',rates:rates};
 }
-const BNR_URL='https://www.bnr.ro/nbrfxrates.xml';
+const BNR_URL='https://curs.bnr.ro/nbrfxrates.xml';
 const fxTO=(u,o)=>{const c=new AbortController();const t=setTimeout(()=>c.abort(),8000);return fetch(u,Object.assign({cache:'no-store',signal:c.signal},o||{})).finally(()=>clearTimeout(t));};
 const FX_SOURCES=[
   async()=>{const r=await fxTO(FX_PROXY||(SBC.url+'/functions/v1/bnr'),{headers:{apikey:SBC.key}});if(!r.ok)throw new Error('HTTP '+r.status);return fxParseBnr(await r.text());},
