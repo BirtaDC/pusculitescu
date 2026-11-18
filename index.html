@@ -474,18 +474,20 @@ function fxParseBnr(txt){
 const BNR_URL='https://www.bnr.ro/nbrfxrates.xml';
 const fxTO=(u,o)=>{const c=new AbortController();const t=setTimeout(()=>c.abort(),8000);return fetch(u,Object.assign({cache:'no-store',signal:c.signal},o||{})).finally(()=>clearTimeout(t));};
 const FX_SOURCES=[
-  async()=>{const r=await fxTO(FX_PROXY||(SBC.url+'/functions/v1/bnr'),{headers:{apikey:SBC.key}});if(!r.ok)throw 0;return fxParseBnr(await r.text());},
-  async()=>{const r=await fxTO(FX_PROXY||BNR_URL);if(!r.ok)throw 0;return fxParseBnr(await r.text());},
-  async()=>{const r=await fxTO('https://api.allorigins.win/raw?url='+encodeURIComponent(BNR_URL));if(!r.ok)throw 0;return fxParseBnr(await r.text());},
-  async()=>{const r=await fxTO('https://corsproxy.io/?url='+encodeURIComponent(BNR_URL));if(!r.ok)throw 0;return fxParseBnr(await r.text());},
-  async()=>{const r=await fxTO('https://api.frankfurter.dev/v1/latest?base=RON');if(!r.ok)throw 0;const j=await r.json();const rates={};Object.keys(j.rates||{}).forEach(c=>{if(j.rates[c]>0)rates[c]=1/j.rates[c];});if(!rates.EUR)throw 0;return {date:j.date,src:'BCE',rates:rates};},
-  async()=>{const r=await fxTO('https://open.er-api.com/v6/latest/RON');if(!r.ok)throw 0;const j=await r.json();const rates={};Object.keys(j.rates||{}).forEach(c=>{if(c!=='RON'&&j.rates[c]>0)rates[c]=1/j.rates[c];});if(!rates.EUR)throw 0;return {date:new Date(j.time_last_update_unix*1000).toISOString().slice(0,10),src:'BCE',rates:rates};}
+  async()=>{const r=await fxTO(FX_PROXY||(SBC.url+'/functions/v1/bnr'),{headers:{apikey:SBC.key}});if(!r.ok)throw new Error('HTTP '+r.status);return fxParseBnr(await r.text());},
+  async()=>{const r=await fxTO(FX_PROXY||BNR_URL);if(!r.ok)throw new Error('HTTP '+r.status);return fxParseBnr(await r.text());},
+  async()=>{const r=await fxTO('https://api.allorigins.win/raw?url='+encodeURIComponent(BNR_URL));if(!r.ok)throw new Error('HTTP '+r.status);return fxParseBnr(await r.text());},
+  async()=>{const r=await fxTO('https://corsproxy.io/?url='+encodeURIComponent(BNR_URL));if(!r.ok)throw new Error('HTTP '+r.status);return fxParseBnr(await r.text());},
+  async()=>{const r=await fxTO('https://api.frankfurter.dev/v1/latest?base=RON');if(!r.ok)throw new Error('HTTP '+r.status);const j=await r.json();const rates={};Object.keys(j.rates||{}).forEach(c=>{if(j.rates[c]>0)rates[c]=1/j.rates[c];});if(!rates.EUR)throw new Error('fără date');return {date:j.date,src:'BCE',rates:rates};},
+  async()=>{const r=await fxTO('https://open.er-api.com/v6/latest/RON');if(!r.ok)throw new Error('HTTP '+r.status);const j=await r.json();const rates={};Object.keys(j.rates||{}).forEach(c=>{if(c!=='RON'&&j.rates[c]>0)rates[c]=1/j.rates[c];});if(!rates.EUR)throw new Error('fără date');return {date:new Date(j.time_last_update_unix*1000).toISOString().slice(0,10),src:'BCE',rates:rates};}
 ];
+const FX_NAMES=['Supabase','BNR direct','proxy 1','proxy 2','BCE','API rezervă'];
+let fxLog=[];
 async function fxLoad(force){
   if(!force&&FX&&FX.at&&Date.now()-FX.at<6*3600*1000&&FX.src==='BNR')return;
-  if(!force&&FX&&FX.at&&Date.now()-FX.at<30*60*1000)return;
-  let n=null;
-  for(const f of FX_SOURCES){try{n=await f();if(n)break;}catch(e){n=null;}}
+  if(!force&&FX&&FX.at&&Date.now()-FX.at<3*60*1000)return;
+  let n=null;fxLog=[];
+  for(let k=0;k<FX_SOURCES.length;k++){try{n=await FX_SOURCES[k]();if(n){fxLog.push(FX_NAMES[k]+': ok');break;}}catch(e){n=null;fxLog.push(FX_NAMES[k]+': '+((e&&e.name==='AbortError')?'prea lent':(e&&e.message&&e.message!=='Failed to fetch'?e.message:'blocat/offline')));}}
   if(n){n.at=Date.now();FX=n;try{localStorage.setItem(FXK,JSON.stringify(FX));}catch(e){}}
   else if(!FX)fxFail=true;
   fxApply();fxHint();
@@ -518,7 +520,7 @@ function fxConv(){
   const a=num(val('cv_amt')),f=val('cv_from'),t=val('cv_to');
   const rf=fxRate(f),rt=fxRate(t);
   o.innerHTML=(rf&&rt)?fmt(a*rf/rt)+' <span>'+esc(t)+'</span>':'—';
-  document.getElementById('cv_src').textContent=fxSrcLabel();
+  document.getElementById('cv_src').textContent=fxSrcLabel();{const lg=document.getElementById('cv_log');if(lg)lg.textContent=fxLog.length?'Surse încercate: '+fxLog.join(' · '):'';}
   document.getElementById('cv_tab').innerHTML=!FX?'<div class="row"><span class="t">—</span></div>':curList().map(c=>{const r=fxRate(c);const big=r<0.1;const nm=(FXC.find(x=>x[0]===c)||[])[1]||'';return '<div class="row"><span class="t">'+(big?'100 ':'1 ')+c+' <small>'+esc(nm)+'</small></span><span class="amt">'+fmt(big?r*100:r,4)+' lei</span></div>';}).join('');
 }
 
@@ -583,7 +585,7 @@ function sheetTour(i){
 function sheetFx(){
   const cs=['RON'].concat(curList());
   const opt=sel=>cs.map(c=>'<option'+(c===sel?' selected':'')+'>'+c+'</option>').join('');
-  openSheet('<h2>Convertor valutar</h2><div class="note" id="cv_src"></div><div class="fld"><label for="cv_amt">Suma</label><input id="cv_amt" class="amtin" inputmode="decimal" value="100" data-focus></div><div class="two"><div class="fld"><label for="cv_from">Din</label><select id="cv_from">'+opt('RON')+'</select></div><div class="fld"><label for="cv_to">În</label><select id="cv_to">'+opt('EUR')+'</select></div></div><div class="remain" style="margin:8px 0"><div><div class="rl">Rezultat</div><div class="rn" id="cv_out">—</div></div></div><button class="link" data-action="fxSwap">⇄ Inversează</button><div class="sec"><h3>Cursuri</h3></div><section class="card" id="cv_tab"></section><div class="actions"><button class="btn ghost" data-action="fxRefresh">Reîmprospătează cursul</button><button class="btn ghost" data-action="close">Închide</button></div>');
+  openSheet('<h2>Convertor valutar</h2><div class="note" id="cv_src"></div><div class="note" id="cv_log" style="font-size:12px;opacity:.7"></div><div class="fld"><label for="cv_amt">Suma</label><input id="cv_amt" class="amtin" inputmode="decimal" value="100" data-focus></div><div class="two"><div class="fld"><label for="cv_from">Din</label><select id="cv_from">'+opt('RON')+'</select></div><div class="fld"><label for="cv_to">În</label><select id="cv_to">'+opt('EUR')+'</select></div></div><div class="remain" style="margin:8px 0"><div><div class="rl">Rezultat</div><div class="rn" id="cv_out">—</div></div></div><button class="link" data-action="fxSwap">⇄ Inversează</button><div class="sec"><h3>Cursuri</h3></div><section class="card" id="cv_tab"></section><div class="actions"><button class="btn ghost" data-action="fxRefresh">Reîmprospătează cursul</button><button class="btn ghost" data-action="close">Închide</button></div>');
   fxConv();
   fxLoad();
 }
