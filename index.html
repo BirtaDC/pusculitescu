@@ -464,12 +464,15 @@ function fxRate(c){if(!c||c==='RON')return 1;return FX&&FX.rates&&FX.rates[c]||n
 function curList(){const l=FXC.map(x=>x[0]).filter(c=>FX&&FX.rates&&FX.rates[c]);return l.length?l:['EUR','USD','GBP','CHF'];}
 function fxSrcLabel(){if(!FX)return fxFail?'Nu am putut descărca cursul. Verifică internetul și apasă „Reîmprospătează cursul”.':'Se descarcă cursul…';return (FX.src==='BNR'?'Curs BNR':'Curs BCE (BNR indisponibil acum)')+' din '+dateRo(FX.date);}
 function fxParseBnr(txt){
-  const x=new DOMParser().parseFromString(txt,'text/xml');
-  const cube=x.getElementsByTagName('Cube')[0];const date=cube&&cube.getAttribute('date');
-  const rates={};
-  Array.from(x.getElementsByTagName('Rate')).forEach(n=>{const c=n.getAttribute('currency');const m=parseFloat(n.getAttribute('multiplier')||'1')||1;const v=parseFloat(n.textContent);if(c&&v>0)rates[c]=v/m;});
-  if(!rates.EUR)throw new Error('parse');
-  return {date:date||iso(TODAY()),src:'BNR',rates:rates};
+  const rates={};const re=/<Rate\b([^>]*)>\s*([^<\s]+)\s*<\/Rate>/gi;let m;
+  while((m=re.exec(txt))){
+    const cm=/currency\s*=\s*["']([A-Za-z]{3})["']/.exec(m[1]);const mm=/multiplier\s*=\s*["'](\d+)["']/.exec(m[1]);
+    const v=parseFloat(m[2].replace(',','.'));const mul=mm?parseInt(mm[1],10)||1:1;
+    if(cm&&v>0)rates[cm[1].toUpperCase()]=v/mul;
+  }
+  if(!rates.EUR)throw new Error('răspuns neașteptat: '+String(txt).slice(0,70).replace(/\s+/g,' '));
+  const dm=/<Cube\b[^>]*date\s*=\s*["']([\d-]+)["']/i.exec(txt);
+  return {date:dm?dm[1]:iso(TODAY()),src:'BNR',rates:rates};
 }
 const BNR_URL='https://www.bnr.ro/nbrfxrates.xml';
 const fxTO=(u,o)=>{const c=new AbortController();const t=setTimeout(()=>c.abort(),8000);return fetch(u,Object.assign({cache:'no-store',signal:c.signal},o||{})).finally(()=>clearTimeout(t));};
